@@ -221,12 +221,17 @@ class MMTDecoder(object):
             self._nn_needs_reset = True
 
     def _decode(self, source_lang, target_lang, batch):
+        print ('_decode START batch:{}'.format(batch))
         prefix_lang = target_lang if self._checkpoint.multilingual_target else None
         batch, input_indexes, sentence_len = self._make_decode_batch(batch, prefix_lang=prefix_lang)
+        print ('_decode AFTER _make_decode_batch:{}'.format(batch))
+        print ('_decode AFTER input_indexes:{}'.format(input_indexes))
+        print ('_decode AFTER sentence_len:{}'.format(sentence_len))
 
         # Compute translation
         self._translator.max_len_b = self._checkpoint.decode_length(source_lang, target_lang, sentence_len)
         translations = self._translator.generate([self._model], batch)
+        print ('_decode AFTER generate translations:{}'.format(translations))
 
         # Decode translation
         sub_dict = self._checkpoint.subword_dictionary
@@ -240,6 +245,9 @@ class MMTDecoder(object):
             hypo_str = sub_dict.string(hypo_tokens)
             hypo_attention = np.asarray(hypo['attention'].data.cpu())
 
+            print('_decode AFTER generate hypo_tokens:{}'.format(hypo_tokens))
+            print('_decode AFTER generate hypo_indexes:{}'.format(hypo_indexes))
+            print('_decode AFTER generate hypo_str:{}'.format(hypo_str))
             # Make alignment
             if len(hypo_indexes) > 0:
                 hypo_alignment = make_alignment(input_indexes[i], hypo_indexes, hypo_attention,
