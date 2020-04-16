@@ -220,10 +220,25 @@ class MMTDecoder(object):
             self._tuner.tune(dataset, num_iterations=epochs, lr=learning_rate)
             self._nn_needs_reset = True
 
-    def _decode(self, source_lang, target_lang, batch):
-        print ('_decode START batch:{}'.format(batch))
+    def _decode(self, source_lang, target_lang, segments):
+        print ('_decode START segments:{}'.format(segments))
+        print('_decode type(segments):{}'.format(type(segments)))
+        for i in range(len(segments)):
+            print('_decode type(segments[i]):{}'.format(type(segments[i])))
+            print ('_decode segments[i]:{}'.format(segments[i]))
+            print ('_decode tokens:{}'.format(segments[i].split()))
+            for j in range(len(segments[i].split())):
+                print('_decode token:|{}|'.format(segments[i][j]))
+                print('_decode len(token):{}'.format(len(segments[i][j])))
+                if len(segments[i][j]) == 1 and not self._checkpoint.subword_dictionary.is_known(segments[i][j]):
+                    print('_decode type(token):{}'.format(type(segments[i][j])))
+                    print('_decode token:{} is NOT contained in the ALPHABET'.format(segments[i][j]))
+                    segments[i][j] = "<UNK>_"
+            print ('_decode NOW segment:{}'.format(segments[i]))
+        print ('_decode NOW segments:{}'.format(segments))
+
         prefix_lang = target_lang if self._checkpoint.multilingual_target else None
-        batch, input_indexes, sentence_len = self._make_decode_batch(batch, prefix_lang=prefix_lang)
+        batch, input_indexes, sentence_len = self._make_decode_batch(segments, prefix_lang=prefix_lang)
         print ('_decode AFTER _make_decode_batch:{}'.format(batch))
         print ('_decode AFTER input_indexes:{}'.format(input_indexes))
         print ('_decode AFTER sentence_len:{}'.format(sentence_len))
