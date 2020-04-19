@@ -562,3 +562,6 @@ class SubwordDictionary(Dictionary):
                 return [self.unk_string()]
 
         return ret
+
+    def is_known(self, subtoken):
+        return subtoken in self.symbols

@@ -14,6 +14,8 @@ from mmt import textencoder
 from mmt.alignment import make_alignment
 from mmt.tuning import Tuner, TuningOptions
 
+import regex
+
 
 class Translation(object):
     def __init__(self, text, alignment=None, score=None):
@@ -220,37 +222,56 @@ class MMTDecoder(object):
             self._tuner.tune(dataset, num_iterations=epochs, lr=learning_rate)
             self._nn_needs_reset = True
 
+    @classmethod
+    def odd_to_dnt(cls, segment, odd_chars, sub_dict):
+        p = regex.compile(r'\${DNT(\d)}', flags=regex.U)
+
+        dnt_idx=0
+        tokens = segment.split()
+
+        #search for existing DNT tokens
+        for token in tokens:
+            m = p.search(token)
+            if m is not None:
+                dnt_idx = max(dnt_idx, int(m.group(1))) + 1
+
+        # search for odd characters (i.e. chars do not belonging to the model.vcb
+        for i in range(len(tokens)):
+            if len(tokens[i]) == 1 and not sub_dict.is_known(tokens[i]):
+                new_token = '${{DNT{}}}'.format(str(dnt_idx))
+                odd_chars[new_token] = tokens[i]
+                tokens[i] = new_token
+                dnt_idx +=  1
+        return ' '.join(tokens)
+
+    @classmethod
+    def dnt_to_odd(cls, segment, odd_chars):
+
+        if len(odd_chars) == 0:
+            return segment
+
+        tokens = segment.split()
+        for i in range(len(tokens)):
+            if (tokens[i] in odd_chars):
+                tokens[i] = odd_chars[tokens[i]]
+
+        return  ' '.join(tokens)
+
     def _decode(self, source_lang, target_lang, segments):
-        print ('_decode START segments:{}'.format(segments))
-        print('_decode type(segments):{}'.format(type(segments)))
-        for i in range(len(segments)):
-            print('_decode type(segments[i]):{}'.format(type(segments[i])))
-            print ('_decode segments[i]:{}'.format(segments[i]))
-            print ('_decode tokens:{}'.format(segments[i].split()))
-            for j in range(len(segments[i].split())):
-                print('_decode token:|{}|'.format(segments[i][j]))
-                print('_decode len(token):{}'.format(len(segments[i][j])))
-                if len(segments[i][j]) == 1 and not self._checkpoint.subword_dictionary.is_known(segments[i][j]):
-                    print('_decode type(token):{}'.format(type(segments[i][j])))
-                    print('_decode token:{} is NOT contained in the ALPHABET'.format(segments[i][j]))
-                    segments[i][j] = "<UNK>_"
-            print ('_decode NOW segment:{}'.format(segments[i]))
-        print ('_decode NOW segments:{}'.format(segments))
+
+        sub_dict = self._checkpoint.subword_dictionary
+
+        odd_chars = {}
+        segments = [self.odd_to_dnt(segment, odd_chars, sub_dict) for segment in segments]
 
         prefix_lang = target_lang if self._checkpoint.multilingual_target else None
         batch, input_indexes, sentence_len = self._make_decode_batch(segments, prefix_lang=prefix_lang)
-        print ('_decode AFTER _make_decode_batch:{}'.format(batch))
-        print ('_decode AFTER input_indexes:{}'.format(input_indexes))
-        print ('_decode AFTER sentence_len:{}'.format(sentence_len))
 
-        # Compute translation
+        # Apply decoding
         self._translator.max_len_b = self._checkpoint.decode_length(source_lang, target_lang, sentence_len)
         translations = self._translator.generate([self._model], batch)
-        print ('_decode AFTER generate translations:{}'.format(translations))
 
-        # Decode translation
-        sub_dict = self._checkpoint.subword_dictionary
-
+        # Get translations and alignments
         results = []
         for i, hypo in enumerate(translations):
             hypo = hypo[0]  # (top-1 best nbest)
@@ -260,9 +281,6 @@ class MMTDecoder(object):
             hypo_str = sub_dict.string(hypo_tokens)
             hypo_attention = np.asarray(hypo['attention'].data.cpu())
 
-            print('_decode AFTER generate hypo_tokens:{}'.format(hypo_tokens))
-            print('_decode AFTER generate hypo_indexes:{}'.format(hypo_indexes))
-            print('_decode AFTER generate hypo_str:{}'.format(hypo_str))
             # Make alignment
             if len(hypo_indexes) > 0:
                 hypo_alignment = make_alignment(input_indexes[i], hypo_indexes, hypo_attention,
@@ -270,6 +288,7 @@ class MMTDecoder(object):
             else:
                 hypo_alignment = []
 
+            hypo_str = self.dnt_to_odd(hypo_str, odd_chars)
             results.append(Translation(hypo_str, alignment=hypo_alignment, score=hypo_score))
 
         return results
