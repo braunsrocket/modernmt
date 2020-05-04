@@ -183,6 +183,11 @@ class MMTDecoder(object):
 
         decode_time = time.time() - begin
 
+        self._logger.info('len(batch) = {}'.format(len(batch)))
+        # for i in len(batch):
+        #     self._logger.info('batch[i] = {}'.format(batch[i]))
+        #     self._logger.info('result[i].text = {}'.format(result[i].text))
+
         self._logger.info('reset_time = %.3f, tune_time = %.3f, decode_time = %.3f'
                           % (reset_time, tune_time, decode_time))
 

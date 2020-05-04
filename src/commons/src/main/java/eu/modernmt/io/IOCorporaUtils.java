@@ -1,5 +1,6 @@
 package eu.modernmt.io;
 
+import eu.modernmt.lang.Language;
 import eu.modernmt.lang.LanguageDirection;
 import eu.modernmt.model.corpus.Corpus;
 import eu.modernmt.model.corpus.MultilingualCorpus;
@@ -71,6 +72,75 @@ public class IOCorporaUtils {
             }
         }
     }
+
+
+    public static Map<Language, Long> countLinesMonolingual(Collection<Corpus> corpora) throws IOException {
+        return countLinesMonolingual(corpora, Runtime.getRuntime().availableProcessors());
+    }
+
+    private static long getLineCountMonolingual(Corpus corpus) throws IOException {
+        long counter = 0;
+        LineReader reader = null;
+        try {
+            reader = corpus.getContentReader();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                counter++;
+            }
+        } finally {
+            IOUtils.closeQuietly(reader);
+        }
+        return counter;
+    }
+
+    public static Map<Language, Long> countLinesMonolingual(Collection<Corpus> corpora, int threads) throws IOException {
+        ExecutorService executor = null;
+
+        try {
+            executor = threads > 1 ? Executors.newFixedThreadPool(threads) : Executors.newSingleThreadExecutor();
+
+            ArrayList<Future<HashMap<Language, Long>>> futures = new ArrayList<>(corpora.size());
+
+            for (Corpus corpus : corpora) {
+                futures.add(executor.submit(() -> {
+                    HashMap<Language, Long> counts = new HashMap<>(1);
+
+                    counts.put(corpus.getLanguage(), getLineCountMonolingual(corpus));
+
+                    return counts;
+                }));
+            }
+
+            HashMap<Language, Long> result = new HashMap<>();
+
+            for (Future<HashMap<Language, Long>> future : futures) {
+                try {
+                    for (Map.Entry<Language, Long> count : future.get().entrySet()) {
+                        Long old = result.get(count.getKey());
+                        result.put(count.getKey(), (old == null ? 0L : old) + count.getValue());
+                    }
+                } catch (ExecutionException e) {
+                    unwrapException(e);
+                } catch (InterruptedException e) {
+                    throw new IOException("Interrupted queue", e);
+                }
+            }
+
+            return result;
+        } finally {
+            if (executor != null) {
+                executor.shutdown();
+
+                try {
+                    if (!executor.awaitTermination(1, TimeUnit.SECONDS))
+                        executor.shutdownNow();
+                } catch (InterruptedException e) {
+                    executor.shutdownNow();
+                }
+            }
+        }
+    }
+
 
     // Word count ------------------------------------------------------------------------------------------------------
 
